@@ -144,6 +144,8 @@ dmypy.json
 /workspace.xml
 
 dataset
+dataset_raw
+raw
 results
 inference/chunks_temp.json
 logs
