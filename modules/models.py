@@ -233,6 +233,7 @@ class Generator(torch.nn.Module):
     def __init__(self, h):
         super(Generator, self).__init__()
         self.h = h
+        self.f0_upsamp = torch.nn.Upsample(scale_factor=np.prod(h["upsample_rates"]))
 
         self.m_source = nsf.SourceModuleHnNSF(
             sampling_rate=h["sampling_rate"],
@@ -267,7 +268,7 @@ class Generator(torch.nn.Module):
         self.upp = np.prod(h["upsample_rates"])
 
     def forward(self, x, f0):
-        x = self.conv_pre(x)
+        f0 = self.f0_upsamp(f0[:, None]).transpose(1, 2)
         har_source, noi_source, uv = self.m_source(f0, self.upp)
         har_source = har_source.transpose(1, 2)
         x = self.conv_pre(x)
