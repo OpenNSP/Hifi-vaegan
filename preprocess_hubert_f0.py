@@ -70,7 +70,7 @@ if __name__ == "__main__":
     f0p = args.f0_predictor
     print(f0p)
 
-    filenames = glob(f"{args.in_dir}/*/*.wav", recursive=True)  # [:10]
+    filenames = glob(f"{args.in_dir}/*.wav", recursive=True)  # [:10]
     shuffle(filenames)
     multiprocessing.set_start_method("spawn", force=True)
 
