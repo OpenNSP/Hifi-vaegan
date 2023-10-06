@@ -79,7 +79,7 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
             if (audio_norm.shape[-1] // self.hop_length) > self.segment_size:
                 start = random.randint(0, int(audio_norm.shape[-1] // self.hop_length) - self.segment_size)
                 end = start + self.segment_size - 10
-                audio_norm = audio_norm[start * self.hop_length : end * self.hop_length]
+                audio_norm = audio_norm[:, start * self.hop_length : end * self.hop_length]
                 f0 = f0[start : end]
         return audio_norm, f0
 
@@ -98,12 +98,11 @@ class TextAudioCollate:
     def __call__(self, batch):
         batch = [b for b in batch if b is not None]
         input_lengths, ids_sorted_decreasing = torch.sort(
-            torch.LongTensor([x.shape[-1] for x in batch]),
+            torch.LongTensor([x[0].shape[-1] for x in batch]),
             dim=0, descending=True)
-
         max_wav_len = max([x[0].size(-1) for x in batch])
-        max_c_len = max([x[1].size(1) for x in batch])
-
+        max_c_len = max([x[1].size(-1) for x in batch])
+        
         f0_padded = torch.zeros(len(batch), max_c_len)
         lengths = torch.LongTensor(len(batch))
 
@@ -114,8 +113,8 @@ class TextAudioCollate:
             
             wav = row[0]
             f0 = row[1]
-            
-            f0_padded[i, :f0.size(0)] = f0
+
+            f0_padded[i, :f0.size(-1)] = f0
             lengths[i] = wav.size(-1)
             wav_padded[i, :wav.size(-1)] = wav
 

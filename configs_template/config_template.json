@@ -10,7 +10,7 @@
       0.99
     ],
     "eps": 1e-09,
-    "batch_size": 1,
+    "batch_size": 2,
     "fp16_run": false,
     "half_type": "fp16",
     "lr_decay": 0.999875,
