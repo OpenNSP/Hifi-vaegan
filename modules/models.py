@@ -6,6 +6,7 @@ from torch.nn import functional as F
 from torch.nn.utils import remove_weight_norm, spectral_norm, weight_norm
 
 import modules.modules as modules
+import modules.nsf as nsf
 from modules.commons import get_padding, init_weights
 
 LRELU_SLOPE = 0.1
@@ -233,15 +234,27 @@ class Generator(torch.nn.Module):
         super(Generator, self).__init__()
         self.h = h
 
+        self.m_source = nsf.SourceModuleHnNSF(
+            sampling_rate=h["sampling_rate"],
+            harmonic_num=0)
+        self.noise_convs = nn.ModuleList()
+
         self.num_kernels = len(h["resblock_kernel_sizes"])
         self.num_upsamples = len(h["upsample_rates"])
         self.conv_pre = weight_norm(Conv1d(h["inter_channels"], h["upsample_initial_channel"], 7, 1, padding=3))
         resblock = ResBlock1 if h["resblock"] == '1' else ResBlock2
         self.ups = nn.ModuleList()
         for i, (u, k) in enumerate(zip(h["upsample_rates"], h["upsample_kernel_sizes"])):
+            c_cur = h["upsample_initial_channel"] // (2 ** (i + 1))
             self.ups.append(weight_norm(
                 ConvTranspose1d(h["upsample_initial_channel"] // (2 ** i), h["upsample_initial_channel"] // (2 ** (i + 1)),
                                 k, u, padding=(k - u +1 ) // 2)))
+            if i + 1 < len(h["upsample_rates"]):  #
+                stride_f0 = np.prod(h["upsample_rates"][i + 1:])
+                self.noise_convs.append(Conv1d(
+                    1, c_cur, kernel_size=stride_f0 * 2, stride=stride_f0, padding=(stride_f0+1) // 2))
+            else:
+                self.noise_convs.append(Conv1d(1, c_cur, kernel_size=1))
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups)):
             ch = h["upsample_initial_channel"] // (2 ** (i + 1))
@@ -253,11 +266,16 @@ class Generator(torch.nn.Module):
         self.conv_post.apply(init_weights)
         self.upp = np.prod(h["upsample_rates"])
 
-    def forward(self, x):
+    def forward(self, x, f0):
+        x = self.conv_pre(x)
+        har_source, noi_source, uv = self.m_source(f0, self.upp)
+        har_source = har_source.transpose(1, 2)
         x = self.conv_pre(x)
         for i in range(self.num_upsamples):
             x = F.leaky_relu(x, LRELU_SLOPE)
             x = self.ups[i](x)
+            x_source = self.noise_convs[i](har_source)
+            x = x + x_source
             xs = None
             for j in range(self.num_kernels):
                 if xs is None:
@@ -401,8 +419,8 @@ class TrainModel(nn.Module):
 
         self.enc_q = Encoder(h=hps)
 
-    def forward(self, wav):
+    def forward(self, wav, f0):
         z, m, logs = self.enc_q(wav)
-        wav = self.dec(z)
+        wav = self.dec(z, f0)
 
         return z, wav, (m, logs)

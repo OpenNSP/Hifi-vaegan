@@ -18,7 +18,7 @@
     "init_lr_ratio": 1,
     "warmup_epochs": 0,
     "c_mel": 45,
-    "c_wav": 5.0,
+    "c_wav": 0 ,
     "c_kl": 1e-2,
     "use_sr": true,
     "max_speclen": 512,
