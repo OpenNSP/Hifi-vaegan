@@ -148,10 +148,11 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
     net_g.train()
     net_d.train()
     for batch_idx, items in enumerate(train_loader):
-        wav, lengths = items
+        wav, lengths, f0 = items
 
         wav = wav.cuda(rank, non_blocking=True)
         lengths = lengths.cuda(rank, non_blocking=True)
+        f0 = f0.cuda(rank, non_blocking=True)
 
         mel = mel_spectrogram_torch(
             wav,
@@ -164,7 +165,7 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
             hps.data.mel_fmax)
         
         with autocast(enabled=hps.train.fp16_run, dtype=half_type):
-            z, y_hat, (m, logs) = net_g(wav)
+            z, y_hat, (m, logs) = net_g(wav, f0)
 
             y_hat_mel = mel_spectrogram_torch(
                 y_hat.squeeze(1),

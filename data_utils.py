@@ -53,12 +53,19 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
             raise ValueError(
                 "Sample Rate not match. Expect {} but got {} from {}".format(
                     self.sampling_rate, sampling_rate, filename))
+        
+        
+        f0, uv = np.load(filename + ".f0.npy",allow_pickle=True)
+        
+        f0 = torch.FloatTensor(np.array(f0,dtype=float))
+        uv = torch.FloatTensor(np.array(uv,dtype=float))
+
         audio_norm = audio / self.max_wav_value
         audio_norm = audio_norm.unsqueeze(0)
         audio_norm = audio_norm[:, :audio.shape[-1] //self.hop_length * self.hop_length]
-        return audio_norm
+        return audio_norm, f0
 
-    def random_slice(self, audio_norm):
+    def random_slice(self, audio_norm, f0):
         # if spec.shape[1] < 30:
         #     print("skip too short audio:", filename)
         #     return None
@@ -73,8 +80,8 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
                 start = random.randint(0, int(audio_norm.shape[-1] // self.hop_length) - self.segment_size)
                 end = start + self.segment_size - 10
                 audio_norm = audio_norm[start * self.hop_length : end * self.hop_length]
-
-        return audio_norm
+                f0 = f0[start : end]
+        return audio_norm, f0
 
     def __getitem__(self, index):
         if self.all_in_mem:
@@ -94,16 +101,22 @@ class TextAudioCollate:
             torch.LongTensor([x.shape[-1] for x in batch]),
             dim=0, descending=True)
 
-        max_wav_len = max([x.size(-1) for x in batch])
+        max_wav_len = max([x[0].size(-1) for x in batch])
+        max_c_len = max([x[1].size(1) for x in batch])
 
+        f0_padded = torch.zeros(len(batch), max_c_len)
         lengths = torch.LongTensor(len(batch))
 
         wav_padded = torch.FloatTensor(len(batch), max_wav_len)
 
         for i in range(len(ids_sorted_decreasing)):
-            wav = batch[ids_sorted_decreasing[i]]
+            row = batch[ids_sorted_decreasing[i]]
             
+            wav = row[0]
+            f0 = row[1]
+            
+            f0_padded[i, :f0.size(0)] = f0
             lengths[i] = wav.size(-1)
             wav_padded[i, :wav.size(-1)] = wav
 
-        return wav_padded, lengths
+        return wav_padded, f0_padded, lengths
