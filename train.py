@@ -264,10 +264,11 @@ def evaluate(hps, generator, eval_loader, writer_eval):
     audio_dict = {}
     with torch.no_grad():
         for batch_idx, items in enumerate(eval_loader):
-            wav, length = items
+            wav, f0, lengths = items
             
             wav = wav.cuda(0)
-
+            f0 = wav.cuda(0)
+            
             mel = mel_spectrogram_torch(
                 wav,
                 hps.data.filter_length,
@@ -278,7 +279,7 @@ def evaluate(hps, generator, eval_loader, writer_eval):
                 hps.data.mel_fmin,
                 hps.data.mel_fmax)
 
-            z, y_hat, (m, logs) = generator.module(wav)
+            z, y_hat, (m, logs) = generator.module(wav, f0)
 
             y_hat_mel = mel_spectrogram_torch(
                 y_hat.squeeze(1).float(),
