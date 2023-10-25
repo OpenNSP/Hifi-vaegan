@@ -144,7 +144,7 @@ class Svc(object):
             _ = self.net_g_ms.eval().to(self.dev)
 
     def get_f0(self, wav):
-        if not hasattr(self,"f0_predictor_object") or self.f0_predictor_object is None or f0_predictor != self.f0_predictor_object.name:
+        if not hasattr(self,"f0_predictor_object") or self.f0_predictor_object is None:
             self.f0_predictor_object = utils.get_f0_predictor("rmvpe",hop_length=self.hop_size,sampling_rate=self.target_sample,device=self.dev,threshold=0.05)
         f0, uv = self.f0_predictor_object.compute_f0_uv(wav.squeeze(0).cpu())
 
@@ -153,7 +153,7 @@ class Svc(object):
         f0 = torch.FloatTensor(f0).to(self.dev)
         uv = torch.FloatTensor(uv).to(self.dev)
 
-        f0 = f0 * 2 ** (tran / 12)
+        #f0 = f0 * 2 ** (tran / 12)
         f0 = f0.unsqueeze(0)
         uv = uv.unsqueeze(0)
         return f0.to(self.dev)
