@@ -145,7 +145,7 @@ class Svc(object):
 
     def get_f0(self, wav):
         if not hasattr(self,"f0_predictor_object") or self.f0_predictor_object is None or f0_predictor != self.f0_predictor_object.name:
-            self.f0_predictor_object = utils.get_f0_predictor("rmvpe",hop_length=self.hop_size,sampling_rate=self.target_sample,device=self.dev,threshold=cr_threshold)
+            self.f0_predictor_object = utils.get_f0_predictor("rmvpe",hop_length=self.hop_size,sampling_rate=self.target_sample,device=self.dev,threshold=0.05)
         f0, uv = self.f0_predictor_object.compute_f0_uv(wav)
 
         if f0_filter and sum(f0) == 0:
@@ -156,7 +156,7 @@ class Svc(object):
         f0 = f0 * 2 ** (tran / 12)
         f0 = f0.unsqueeze(0)
         uv = uv.unsqueeze(0)
-        return f0
+        return f0.to(self.dev)
 
 
     def infer(self, raw_path,
