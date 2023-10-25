@@ -146,6 +146,7 @@ class Svc(object):
 
     def infer(self, raw_path,
               ):
+        self.f0_predictor_object = utils.get_f0_predictor("harvest",hop_length=self.hop_size,sampling_rate=self.target_sample,device=self.dev,threshold=cr_threshold)
         if isinstance(raw_path, str) or isinstance(raw_path, io.BytesIO):
             wav, sr = torchaudio.load(raw_path)
             if not hasattr(self,"audio_resample_transform") or self.audio_resample_transform.orig_freq != sr:
@@ -153,10 +154,11 @@ class Svc(object):
             wav = self.audio_resample_transform(wav).to(self.dev)
         else:
             wav = raw_path
+        f0, uv = self.f0_predictor_object.compute_f0_uv(wav)
 
         with torch.no_grad():
             start = time.time()
-            z, wav, (m, logs) = self.net_g_ms(wav)
+            z, wav, (m, logs) = self.net_g_ms(wav, f0)
             print("vaegan use time:{}".format(time.time() - start))
         return wav
 
