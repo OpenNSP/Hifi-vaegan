@@ -148,8 +148,8 @@ class Svc(object):
             self.f0_predictor_object = utils.get_f0_predictor("rmvpe",hop_length=self.hop_size,sampling_rate=self.target_sample,device=self.dev,threshold=0.05)
         f0, uv = self.f0_predictor_object.compute_f0_uv(wav.squeeze(0).cpu())
 
-        if f0_filter and sum(f0) == 0:
-            raise F0FilterException("No voice detected")
+        #if f0_filter and sum(f0) == 0:
+        #    raise F0FilterException("No voice detected")
         f0 = torch.FloatTensor(f0).to(self.dev)
         uv = torch.FloatTensor(uv).to(self.dev)
 
