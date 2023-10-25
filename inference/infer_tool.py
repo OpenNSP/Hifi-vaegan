@@ -146,7 +146,7 @@ class Svc(object):
     def get_f0(self, wav):
         if not hasattr(self,"f0_predictor_object") or self.f0_predictor_object is None or f0_predictor != self.f0_predictor_object.name:
             self.f0_predictor_object = utils.get_f0_predictor("rmvpe",hop_length=self.hop_size,sampling_rate=self.target_sample,device=self.dev,threshold=0.05)
-        f0, uv = self.f0_predictor_object.compute_f0_uv(wav)
+        f0, uv = self.f0_predictor_object.compute_f0_uv(wav.cpu())
 
         if f0_filter and sum(f0) == 0:
             raise F0FilterException("No voice detected")
