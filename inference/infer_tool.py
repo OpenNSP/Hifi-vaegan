@@ -143,6 +143,21 @@ class Svc(object):
         else:
             _ = self.net_g_ms.eval().to(self.dev)
 
+    def get_f0(self, wav):
+        if not hasattr(self,"f0_predictor_object") or self.f0_predictor_object is None or f0_predictor != self.f0_predictor_object.name:
+            self.f0_predictor_object = utils.get_f0_predictor(f0_predictor,hop_length=self.hop_size,sampling_rate=self.target_sample,device=self.dev,threshold=cr_threshold)
+        f0, uv = self.f0_predictor_object.compute_f0_uv(wav)
+
+        if f0_filter and sum(f0) == 0:
+            raise F0FilterException("No voice detected")
+        f0 = torch.FloatTensor(f0).to(self.dev)
+        uv = torch.FloatTensor(uv).to(self.dev)
+
+        f0 = f0 * 2 ** (tran / 12)
+        f0 = f0.unsqueeze(0)
+        uv = uv.unsqueeze(0)
+        return f0
+
 
     def infer(self, raw_path,
               ):
@@ -155,8 +170,10 @@ class Svc(object):
             wav = raw_path
 
         with torch.no_grad():
+            f0 = self.get_f0(wav)
+            f0 = f0.to(self.dtype)
             start = time.time()
-            z, wav, (m, logs) = self.net_g_ms(wav)
+            z, wav, (m, logs) = self.net_g_ms(wav, f0=f0)
             print("vaegan use time:{}".format(time.time() - start))
         return wav
 
