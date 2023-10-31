@@ -156,7 +156,7 @@ class Svc(object):
 
         with torch.no_grad():
             start = time.time()
-            z, wav, (m, logs) = self.net_g_ms(wav)
+            z, wav, (m, logs), commit_loss = self.net_g_ms(wav)
             print("vaegan use time:{}".format(time.time() - start))
         return wav
 

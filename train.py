@@ -164,7 +164,7 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
             hps.data.mel_fmax)
         
         with autocast(enabled=hps.train.fp16_run, dtype=half_type):
-            z, y_hat, (m, logs) = net_g(wav)
+            z, y_hat, (m, logs), commit_loss = net_g(wav)
 
             y_hat_mel = mel_spectrogram_torch(
                 y_hat.squeeze(1),
@@ -201,7 +201,8 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
                 loss_kl = kl_loss(logs, m) * hps.train.c_kl
                 loss_fm = feature_loss(fmap_r, fmap_g)
                 loss_gen, losses_gen = generator_loss(y_d_hat_g)
-                loss_gen_all = loss_gen + loss_fm + loss_mel + loss_kl + loss_wav
+                commit_loss = commit_loss * hps.train.c_vq
+                loss_gen_all = loss_gen + loss_fm + loss_mel + loss_kl + loss_wav + commit_loss
         optim_g.zero_grad()
         scaler.scale(loss_gen_all).backward()
         scaler.unscale_(optim_g)
@@ -223,7 +224,7 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
 
                 scalar_dict = {"loss/g/total": loss_gen_all, "loss/d/total": loss_disc_all, "learning_rate": lr,
                                "grad_norm_d": grad_norm_d, "grad_norm_g": grad_norm_g}
-                scalar_dict.update({"loss/g/fm": loss_fm, "loss/g/mel": loss_mel, "loss/g/kl": loss_kl, "loss_wav":loss_wav})
+                scalar_dict.update({"loss/g/fm": loss_fm, "loss/g/mel": loss_mel, "loss/g/kl": loss_kl, "loss_wav":loss_wav, "vq_loss": commit_loss})
 
                 image_dict = {
                     "slice/mel_org": utils.plot_spectrogram_to_numpy(mel[0].data.cpu().numpy()),
@@ -277,7 +278,7 @@ def evaluate(hps, generator, eval_loader, writer_eval):
                 hps.data.mel_fmin,
                 hps.data.mel_fmax)
 
-            z, y_hat, (m, logs) = generator.module(wav)
+            z, y_hat, (m, logs), commit_loss = generator.module(wav)
 
             y_hat_mel = mel_spectrogram_torch(
                 y_hat.squeeze(1).float(),

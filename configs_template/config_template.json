@@ -20,6 +20,7 @@
     "c_mel": 45,
     "c_wav": 5.0,
     "c_kl": 1e-2,
+    "c_vq": 1e-1,
     "use_sr": true,
     "max_speclen": 512,
     "port": "8001",
@@ -68,7 +69,9 @@
     "use_depthwise_conv":false,
     "flow_share_parameter": false,
     "use_automatic_f0_prediction": true,
-    "use_transformer_flow": false
+    "use_transformer_flow": false,
+    "use_vq": true,
+    "codebook_size": 4096
   },
   "spk": {
     "nyaru": 0,

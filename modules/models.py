@@ -4,6 +4,7 @@ from torch import nn
 from torch.nn import AvgPool1d, Conv1d, Conv2d, ConvTranspose1d
 from torch.nn import functional as F
 from torch.nn.utils import remove_weight_norm, spectral_norm, weight_norm
+from vector_quantize_pytorch import VectorQuantize
 
 import modules.modules as modules
 from modules.commons import get_padding, init_weights
@@ -369,6 +370,8 @@ class TrainModel(nn.Module):
                  upsample_kernel_sizes,
                  ssl_dim,
                  sampling_rate=44100,
+                 use_vq = False,
+                 codebook_size = 4096,
                  **kwargs):
 
         super().__init__()
@@ -401,8 +404,21 @@ class TrainModel(nn.Module):
 
         self.enc_q = Encoder(h=hps)
 
+        if use_vq:
+            self.quantizer = VectorQuantize(
+                dim = inter_channels,
+                codebook_size = codebook_size,
+                decay = 0.8,             
+                commitment_weight = 1.)
+        else:
+            self.quantizer = torch.nn.Identity()
+
     def forward(self, wav):
         z, m, logs = self.enc_q(wav)
+        if self.quantizer is not None and self.training:
+            z, indices, commit_loss = self.quantizer(z)
+        else:
+            commit_loss = 0
         wav = self.dec(z)
 
-        return z, wav, (m, logs)
+        return z, wav, (m, logs), commit_loss
