@@ -411,12 +411,13 @@ class TrainModel(nn.Module):
                 decay = 0.8,             
                 commitment_weight = 1.)
         else:
-            self.quantizer = torch.nn.Identity()
+            self.quantizer = None
 
     def forward(self, wav):
         z, m, logs = self.enc_q(wav)
         if self.quantizer is not None and self.training:
-            z, indices, commit_loss = self.quantizer(z)
+            z, indices, commit_loss = self.quantizer(z.transpose(1,2))
+            z = z.transpose(1,2)
         else:
             commit_loss = 0
         wav = self.dec(z)
