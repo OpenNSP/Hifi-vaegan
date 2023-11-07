@@ -159,9 +159,8 @@ class Svc(object):
         return f0.to(self.dev)
 
 
-    def infer(self, raw_path,
-              ):
-        self.f0_predictor_object = utils.get_f0_predictor("harvest",hop_length=self.hop_size,sampling_rate=self.target_sample,device=self.dev,threshold=cr_threshold)
+    def infer(self, raw_path):
+        self.f0_predictor_object = utils.get_f0_predictor("harvest",hop_length=self.hop_size,sampling_rate=self.target_sample,device=self.dev)
         if isinstance(raw_path, str) or isinstance(raw_path, io.BytesIO):
             wav, sr = torchaudio.load(raw_path)
             if not hasattr(self,"audio_resample_transform") or self.audio_resample_transform.orig_freq != sr:

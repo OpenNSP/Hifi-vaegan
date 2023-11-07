@@ -106,7 +106,7 @@ class TextAudioCollate:
         f0_padded = torch.zeros(len(batch), max_c_len)
         lengths = torch.LongTensor(len(batch))
 
-        wav_padded = torch.FloatTensor(len(batch), max_wav_len)
+        wav_padded = torch.zeros(len(batch), max_wav_len)
 
         for i in range(len(ids_sorted_decreasing)):
             row = batch[ids_sorted_decreasing[i]]
