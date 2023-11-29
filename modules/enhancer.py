@@ -6,7 +6,6 @@ from torchaudio.transforms import Resample
 from vdecoder.nsf_hifigan.models import load_model
 from vdecoder.nsf_hifigan.nvSTFT import STFT
 
-
 class Enhancer:
     def __init__(self, enhancer_type, enhancer_ckpt, device=None):
         if device is None:
@@ -16,7 +15,7 @@ class Enhancer:
         if enhancer_type == 'nsf-hifigan':
             self.enhancer = NsfHifiGAN(enhancer_ckpt, device=self.device)
         else:
-            raise ValueError(f" [x] Unknown enhancer: {enhancer_type}")
+            raise ValueError(f"[x] Unknown enhancer: {enhancer_type}")
         
         self.resample_kernel = {}
         self.enhancer_sample_rate = self.enhancer.sample_rate()
@@ -76,14 +75,13 @@ class Enhancer:
             
         return enhanced_audio, enhancer_sample_rate
         
-        
 class NsfHifiGAN(torch.nn.Module):
     def __init__(self, model_path, device=None):
         super().__init__()
         if device is None:
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.device = device
-        print('| Load HifiGAN: ', model_path)
+        print('Load HifiGAN: ', model_path)
         self.model, self.h = load_model(model_path, device=self.device)
     
     def sample_rate(self):
