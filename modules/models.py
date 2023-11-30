@@ -27,10 +27,10 @@ class Encoder(nn.Module):
         for i, (u, k) in enumerate(zip(reversed(h["upsample_rates"]), reversed(h["upsample_kernel_sizes"]))):
             self.ups.append(weight_norm(
                 Conv1d(h["upsample_initial_channel"] // (2 ** (len(h["upsample_rates"]) - i)), h["upsample_initial_channel"] // (2 ** (len(h["upsample_rates"]) - i - 1)),
-                                k, u, padding=(k - u +1 ) // 2)))
+                                k, u, padding= (k - u + 1 ) // 2)))
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups), 0, -1):
-            ch = h["upsample_initial_channel"] // (2 ** (i-1))
+            ch = h["upsample_initial_channel"] // (2 ** (i - 1))
             for j, (k, d) in enumerate(zip(h["resblock_kernel_sizes"], h["resblock_dilation_sizes"])):
                 self.resblocks.append(resblock(h, ch, k, d))
 
