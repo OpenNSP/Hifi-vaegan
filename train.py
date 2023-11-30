@@ -43,12 +43,6 @@ progress = Progress(
     transient=True
     )
 
-def get_interval_time():
-    cur_time = time.time()
-    time_interval = cur_time - last_time
-    last_time = cur_time
-    return time_interval
-
 def main():
     assert torch.cuda.is_available(), "CPU training is not allowed."
     hps = utils.get_hparams()
@@ -58,7 +52,6 @@ def main():
     os.environ['MASTER_PORT'] = hps.train.port
 
     mp.spawn(run, nprocs=n_gpus, args=(n_gpus, hps,))
-
 
 def run(rank, n_gpus, hps):
     global global_step
@@ -75,13 +68,10 @@ def run(rank, n_gpus, hps):
     num_workers = 5 if multiprocessing.cpu_count() > 4 else multiprocessing.cpu_count()
     if all_in_mem:
         num_workers = 0
-    train_loader = DataLoader(train_dataset, num_workers=num_workers, shuffle=False, pin_memory=True,
-                              batch_size=hps.train.batch_size, collate_fn=collate_fn)
+    train_loader = DataLoader(train_dataset, num_workers=num_workers, shuffle=False, pin_memory=True, batch_size=hps.train.batch_size, collate_fn=collate_fn)
     if rank == 0:
         eval_dataset = TextAudioSpeakerLoader(hps.data.validation_files, hps, all_in_mem=all_in_mem,vol_aug = False,is_slice=False)
-        eval_loader = DataLoader(eval_dataset, num_workers=1, shuffle=False,
-                                 batch_size=1, pin_memory=False,
-                                 drop_last=False, collate_fn=collate_fn)
+        eval_loader = DataLoader(eval_dataset, num_workers=1, shuffle=False, batch_size=1, pin_memory=False, drop_last=False, collate_fn=collate_fn)
 
     net_g = TrainModel(
         hps.data.hop_length,
@@ -103,14 +93,11 @@ def run(rank, n_gpus, hps):
 
     skip_optimizer = False
     try:
-        _, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), net_g,
-                                                   optim_g, skip_optimizer)
-        _, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "D_*.pth"), net_d,
-                                                   optim_d, skip_optimizer)
+        _, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), net_g, optim_g, skip_optimizer)
+        _, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "D_*.pth"), net_d, optim_d, skip_optimizer)
         epoch_str = max(epoch_str, 1)
         name=utils.latest_checkpoint_path(hps.model_dir, "D_*.pth")
-        global_step=int(name[name.rfind("_")+1:name.rfind(".")])+1
-        #global_step = (epoch_str - 1) * len(train_loader)
+        global_step=int(name[name.rfind("_") + 1:name.rfind(".")]) + 1
     except Exception:
         print("load old checkpoint failed...")
         epoch_str = 1

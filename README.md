@@ -1,5 +1,7 @@
 # HiFi-VAEGAN
-# 0. Introduction
+**English**  [简体中文](README_ZH.md)
+
+## 0. Introduction
 ![Diagram](EnCodec.png)
 **This project is an unofficial reproduction of encodec. The training framework comes from [so-vits-svc](https://github.com/svc-develop-team/so-vits-svc).**
 
