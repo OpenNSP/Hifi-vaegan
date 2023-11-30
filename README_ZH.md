@@ -2,7 +2,7 @@
 [English](README.md)  **简体中文**
 
 ## 0. 介绍
-** 该网络相当于encodec去掉了了RVQ，图参考encodec即可 **
+**该网络相当于encodec去掉了了RVQ，图参考encodec即可**
 ![Diagram](EnCodec.png)
 **本项目是encodec的非官方实现。训练框架来自[so-vits-svc](https://github.com/svc-develop-team/so-vits-svc).**
 
