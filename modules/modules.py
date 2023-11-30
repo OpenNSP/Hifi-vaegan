@@ -13,7 +13,6 @@ def fused_add_tanh_sigmoid_multiply(input_a, n_channels):
   acts = t_act * s_act
   return acts
 
-
 class LayerNorm(nn.Module):
   def __init__(self, channels, eps=1e-5):
     super().__init__()
@@ -27,7 +26,6 @@ class LayerNorm(nn.Module):
     x = x.transpose(1, -1)
     x = F.layer_norm(x, (self.channels,), self.gamma, self.beta, self.eps)
     return x.transpose(1, -1)
-
  
 class ConvReluNorm(nn.Module):
   def __init__(self, in_channels, hidden_channels, out_channels, kernel_size, n_layers, p_dropout):
@@ -63,7 +61,6 @@ class ConvReluNorm(nn.Module):
     x = x_org + self.proj(x)
     return x * x_mask
 
-
 class WN(torch.nn.Module):
   def __init__(self, hidden_channels, kernel_size, dilation_rate, n_layers, p_dropout=0):
     super(WN, self).__init__()
@@ -96,8 +93,6 @@ class WN(torch.nn.Module):
       res_skip_layer = weight_norm(res_skip_layer, name='weight')
       self.res_skip_layers.append(res_skip_layer)
 
-
-
   def forward(self, x, x_mask, **kwargs):
     output = torch.zeros_like(x)
     n_channels_tensor = torch.IntTensor([self.hidden_channels])
@@ -125,7 +120,6 @@ class WN(torch.nn.Module):
     for l in self.res_skip_layers:
       remove_weight_norm(l)
 
-
 class Log(nn.Module):
   def forward(self, x, x_mask, reverse=False, **kwargs):
     if not reverse:
@@ -136,7 +130,6 @@ class Log(nn.Module):
       x = torch.exp(x) * x_mask
       return x
     
-
 class Flip(nn.Module):
   def forward(self, x, *args, reverse=False, **kwargs):
     x = torch.flip(x, [1])

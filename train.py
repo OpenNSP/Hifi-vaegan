@@ -17,10 +17,10 @@ import utils
 from data_utils import TextAudioCollate, TextAudioSpeakerLoader
 from modules.losses import discriminator_loss, feature_loss, generator_loss, kl_loss
 from modules.mel_processing import mel_spectrogram_torch
-from modules.models import (
-    MultiPeriodDiscriminator,
-    TrainModel,
-)
+from modules.models import MultiPeriodDiscriminator, TrainModel
+
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn, MofNCompleteColumn
+from rich import print
 
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 logging.getLogger('numba').setLevel(logging.WARNING)
@@ -29,11 +29,27 @@ torch.backends.cudnn.benchmark = True
 global_step = 0
 start_time = time.time()
 
-# os.environ['TORCH_DISTRIBUTED_DEBUG'] = 'INFO'
+progress = Progress(
+    TextColumn("Running: "),
+    BarColumn(), "[progress.percentage]{task.percentage:>3.1f}%",
+    "•",
+    MofNCompleteColumn(),
+    "•",
+    TimeElapsedColumn(),
+    "|",
+    TimeRemainingColumn(),
+    "•",
+    TextColumn("[progress.description]{task.description}"),
+    transient=True
+    )
 
+def get_interval_time():
+    cur_time = time.time()
+    time_interval = cur_time - last_time
+    last_time = cur_time
+    return time_interval
 
 def main():
-    """Assume Single Node Multi GPUs Training Only"""
     assert torch.cuda.is_available(), "CPU training is not allowed."
     hps = utils.get_hparams()
 
@@ -47,18 +63,14 @@ def main():
 def run(rank, n_gpus, hps):
     global global_step
     if rank == 0:
-        logger = utils.get_logger(hps.model_dir)
-        logger.info(hps)
-        utils.check_git_hash(hps.model_dir)
+        print("Hyperparameters:", hps)
         writer = SummaryWriter(log_dir=hps.model_dir)
-        writer_eval = SummaryWriter(log_dir=os.path.join(hps.model_dir, "eval"))
-    
-    # for pytorch on win, backend use gloo    
+     
     dist.init_process_group(backend=  'gloo' if os.name == 'nt' else 'nccl', init_method='env://', world_size=n_gpus, rank=rank)
     torch.manual_seed(hps.train.seed)
     torch.cuda.set_device(rank)
     collate_fn = TextAudioCollate()
-    all_in_mem = hps.train.all_in_mem   # If you have enough memory, turn on this option to avoid disk IO and speed up training.
+    all_in_mem = hps.train.all_in_mem
     train_dataset = TextAudioSpeakerLoader(hps.data.training_files, hps, all_in_mem=all_in_mem)
     num_workers = 5 if multiprocessing.cpu_count() > 4 else multiprocessing.cpu_count()
     if all_in_mem:
@@ -113,32 +125,28 @@ def run(rank, n_gpus, hps):
 
     scaler = GradScaler(enabled=hps.train.fp16_run)
 
-    for epoch in range(epoch_str, hps.train.epochs + 1):
-        # set up warm-up learning rate
-        if epoch <= warmup_epoch:
-            for param_group in optim_g.param_groups:
-                param_group['lr'] = hps.train.learning_rate / warmup_epoch * epoch
-            for param_group in optim_d.param_groups:
-                param_group['lr'] = hps.train.learning_rate / warmup_epoch * epoch
-        # training
-        if rank == 0:
-            train_and_evaluate(rank, epoch, hps, [net_g, net_d], [optim_g, optim_d], [scheduler_g, scheduler_d], scaler,
-                               [train_loader, eval_loader], logger, [writer, writer_eval])
-        else:
-            train_and_evaluate(rank, epoch, hps, [net_g, net_d], [optim_g, optim_d], [scheduler_g, scheduler_d], scaler,
-                               [train_loader, None], None, None)
-        # update learning rate
-        scheduler_g.step()
-        scheduler_d.step()
+    print("======= Start training =======")
+    global train_task
+    with progress:
+        train_task = progress.add_task("Train", total=len(train_loader) - 1)
+        for epoch in range(epoch_str, hps.train.epochs + 1):
+            if epoch <= warmup_epoch:
+                for param_group in optim_g.param_groups:
+                    param_group['lr'] = hps.train.learning_rate / warmup_epoch * epoch
+                for param_group in optim_d.param_groups:
+                    param_group['lr'] = hps.train.learning_rate / warmup_epoch * epoch
+            if rank == 0:
+                train_and_evaluate(rank, epoch, hps, [net_g, net_d], [optim_g, optim_d], [scheduler_g, scheduler_d], scaler, [train_loader, eval_loader], writer)
+            else:
+                train_and_evaluate(rank, epoch, hps, [net_g, net_d], [optim_g, optim_d], [scheduler_g, scheduler_d], scaler, [train_loader, None], None)
+            scheduler_g.step()
+            scheduler_d.step()
 
-
-def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loaders, logger, writers):
+def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loaders, writer):
     net_g, net_d = nets
     optim_g, optim_d = optims
     scheduler_g, scheduler_d = schedulers
     train_loader, eval_loader = loaders
-    if writers is not None:
-        writer, writer_eval = writers
     
     half_type = torch.bfloat16 if hps.train.half_type=="bf16" else torch.float16
 
@@ -148,6 +156,7 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
     net_g.train()
     net_d.train()
     for batch_idx, items in enumerate(train_loader):
+        start_time = time.time()
         wav, lengths = items
 
         wav = wav.cuda(rank, non_blocking=True)
@@ -213,18 +222,9 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
         if rank == 0:
             if global_step % hps.train.log_interval == 0:
                 lr = optim_g.param_groups[0]['lr']
-                losses = [loss_disc, loss_gen, loss_fm, loss_mel, loss_wav, loss_kl]
-                reference_loss=0
-                for i in losses:
-                    reference_loss += i
-                logger.info('Train Epoch: {} [{:.0f}%]'.format(
-                    epoch,
-                    100. * batch_idx / len(train_loader)))
-                logger.info(f"Losses: {[x.item() for x in losses]}, step: {global_step}, lr: {lr}, reference_loss: {reference_loss}")
 
-                scalar_dict = {"loss/g/total": loss_gen_all, "loss/d/total": loss_disc_all, "learning_rate": lr,
-                               "grad_norm_d": grad_norm_d, "grad_norm_g": grad_norm_g}
-                scalar_dict.update({"loss/g/fm": loss_fm, "loss/g/mel": loss_mel, "loss/g/kl": loss_kl, "loss_wav":loss_wav, "vq_loss": commit_loss})
+                scalar_dict = {"loss/g": loss_gen, "loss/d": loss_disc_all, "lr": lr, "grad_norm/g": grad_norm_g, "grad_norm/d": grad_norm_d}
+                scalar_dict.update({"loss/g/fm": loss_fm, "loss/g/mel": loss_mel, "loss/g/kl": loss_kl, "loss/loss_wav":loss_wav, "loss/vq_loss": commit_loss})
 
                 image_dict = {
                     "slice/mel_org": utils.plot_spectrogram_to_numpy(mel[0].data.cpu().numpy()),
@@ -239,7 +239,7 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
                 )
 
             if global_step % hps.train.eval_interval == 0:
-                evaluate(hps, net_g, eval_loader, writer_eval)
+                evaluate(hps, net_g, eval_loader, writer)
                 utils.save_checkpoint(net_g, optim_g, hps.train.learning_rate, epoch,
                                       os.path.join(hps.model_dir, "G_{}.pth".format(global_step)))
                 utils.save_checkpoint(net_d, optim_d, hps.train.learning_rate, epoch,
@@ -247,23 +247,20 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
                 keep_ckpts = getattr(hps.train, 'keep_ckpts', 0)
                 if keep_ckpts > 0:
                     utils.clean_checkpoints(path_to_models=hps.model_dir, n_ckpts_to_keep=keep_ckpts, sort_by_time=True)
-
+                    print(f"Save checkpoint: G_{global_step}.pth D_{global_step}.pth | epoch={epoch}, step={global_step}, lr={optim_g.param_groups[0]['lr']:.5f}, loss_g={loss_gen.item():.2f}, loss_fm={loss_fm.item():.2f}, loss_mel={loss_mel.item():.2f}, loss_kl={loss_kl.item():.4f}, loss_wav={loss_wav.item():.2f}, vq_loss={commit_loss.item():.2f}")
+            end_time = time.time()
+            progress.update(train_task, advance=1, description=f"speed={1 / (end_time - start_time):.2f}it/s, epoch={epoch}, step={global_step}, lr={optim_g.param_groups[0]['lr']:.5f}, loss_g={loss_gen.item():.2f}, loss_fm={loss_fm.item():.2f}, loss_mel={loss_mel.item():.2f}, loss_kl={loss_kl.item():.2f}, loss_wav={loss_wav.item():.2f}, vq_loss={commit_loss.item():.4f}, grad_norm={grad_norm_g:.2f}")
         global_step += 1
+    progress.reset(train_task)
 
-    if rank == 0:
-        global start_time
-        now = time.time()
-        durtaion = format(now - start_time, '.2f')
-        logger.info(f'====> Epoch: {epoch}, cost {durtaion} s')
-        start_time = now
-
-3
-def evaluate(hps, generator, eval_loader, writer_eval):
+def evaluate(hps, generator, eval_loader, writer):
     generator.eval()
     image_dict = {}
     audio_dict = {}
     with torch.no_grad():
+        evaluate_task = progress.add_task("Evaluate", total=len(eval_loader) - 1)
         for batch_idx, items in enumerate(eval_loader):
+            progress.update(evaluate_task, description=f"audio=_{batch_idx}")
             wav, length = items
             
             wav = wav.cuda(0)
@@ -291,21 +288,18 @@ def evaluate(hps, generator, eval_loader, writer_eval):
                 hps.data.mel_fmax
             )
 
-            audio_dict.update({
-                f"gen/audio_{batch_idx}": y_hat[0],
-                f"gt/audio_{batch_idx}": wav[0]
-            })
-        image_dict.update({
-            "gen/mel": utils.plot_spectrogram_to_numpy(y_hat_mel[0].cpu().numpy()),
-            "gt/mel": utils.plot_spectrogram_to_numpy(mel[0].cpu().numpy())
-        })
+            audio_dict.update({f"gen/audio_{batch_idx}": y_hat[0], f"gt/audio_{batch_idx}": wav[0]})
+            progress.update(evaluate_task, advance=1)
+        image_dict.update({"mel/gen": utils.plot_spectrogram_to_numpy(y_hat_mel[0].cpu().numpy()), "mel/gt": utils.plot_spectrogram_to_numpy(mel[0].cpu().numpy())})
+    progress.update(evaluate_task, description=f"Writing Summarize")
     utils.summarize(
-        writer=writer_eval,
+        writer=writer,
         global_step=global_step,
         images=image_dict,
         audios=audio_dict,
         audio_sampling_rate=hps.data.sampling_rate
     )
+    progress.remove_task(evaluate_task)
     generator.train()
 
 

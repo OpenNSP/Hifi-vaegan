@@ -58,24 +58,6 @@ class Encoder(nn.Module):
         z = m + torch.randn_like(m) * torch.exp(logs)
         return z, m, logs
 
-    # def forward(self, x):
-    #     x = self.conv_pre(x)
-    #     for i in range(self.num_upsamples):
-    #         x = F.leaky_relu(x, LRELU_SLOPE)
-    #         x = self.ups[i](x)
-    #         xs = None
-    #         for j in range(self.num_kernels):
-    #             if xs is None:
-    #                 xs = self.resblocks[i * self.num_kernels + j](x)
-    #             else:
-    #                 xs += self.resblocks[i * self.num_kernels + j](x)
-    #         x = xs / self.num_kernels
-    #     x = F.leaky_relu(x)
-    #     x = self.conv_post(x)
-    #     x = torch.tanh(x)
-
-    #     return x
-
 class DiscriminatorP(torch.nn.Module):
     def __init__(self, period, kernel_size=5, stride=3, use_spectral_norm=False):
         super(DiscriminatorP, self).__init__()
@@ -111,8 +93,6 @@ class DiscriminatorP(torch.nn.Module):
 
         return x, fmap
 
-
-
 class DiscriminatorS(torch.nn.Module):
     def __init__(self, use_spectral_norm=False):
         super(DiscriminatorS, self).__init__()
@@ -139,7 +119,6 @@ class DiscriminatorS(torch.nn.Module):
         x = torch.flatten(x, 1, -1)
 
         return x, fmap
-
 
 class MultiPeriodDiscriminator(torch.nn.Module):
     def __init__(self, use_spectral_norm=False):
@@ -228,12 +207,10 @@ class ResBlock2(torch.nn.Module):
         for l in self.convs:
             remove_weight_norm(l)
 
-
 class Generator(torch.nn.Module):
     def __init__(self, h):
         super(Generator, self).__init__()
         self.h = h
-
         self.num_kernels = len(h["resblock_kernel_sizes"])
         self.num_upsamples = len(h["upsample_rates"])
         self.conv_pre = weight_norm(Conv1d(h["inter_channels"], h["upsample_initial_channel"], 7, 1, padding=3))
@@ -273,15 +250,12 @@ class Generator(torch.nn.Module):
         return x
 
     def remove_weight_norm(self):
-        print('Removing weight norm...')
         for l in self.ups:
             remove_weight_norm(l)
         for l in self.resblocks:
             l.remove_weight_norm()
         remove_weight_norm(self.conv_pre)
         remove_weight_norm(self.conv_post)
-
-
 
 class MultiScaleDiscriminator(torch.nn.Module):
     def __init__(self):
@@ -314,7 +288,6 @@ class MultiScaleDiscriminator(torch.nn.Module):
 
         return y_d_rs, y_d_gs, fmap_rs, fmap_gs
 
-
 def feature_loss(fmap_r, fmap_g):
     loss = 0
     for dr, dg in zip(fmap_r, fmap_g):
@@ -322,7 +295,6 @@ def feature_loss(fmap_r, fmap_g):
             loss += torch.mean(torch.abs(rl - gl))
 
     return loss * 2
-
 
 def discriminator_loss(disc_real_outputs, disc_generated_outputs):
     loss = 0
@@ -337,7 +309,6 @@ def discriminator_loss(disc_real_outputs, disc_generated_outputs):
 
     return loss, r_losses, g_losses
 
-
 def generator_loss(disc_outputs):
     loss = 0
     gen_losses = []
@@ -347,8 +318,6 @@ def generator_loss(disc_outputs):
         loss += l
 
     return loss, gen_losses
-
-
 
 class TrainModel(nn.Module):
     """
@@ -368,7 +337,6 @@ class TrainModel(nn.Module):
                  upsample_rates,
                  upsample_initial_channel,
                  upsample_kernel_sizes,
-                 ssl_dim,
                  sampling_rate=44100,
                  use_vq = False,
                  codebook_size = 4096,
@@ -385,7 +353,6 @@ class TrainModel(nn.Module):
         self.upsample_rates = upsample_rates
         self.upsample_initial_channel = upsample_initial_channel
         self.upsample_kernel_sizes = upsample_kernel_sizes
-        self.ssl_dim = ssl_dim
         self.hop_size = hop_size
         self.windows_size = windows_size
         

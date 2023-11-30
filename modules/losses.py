@@ -1,6 +1,5 @@
 import torch
 
-
 def feature_loss(fmap_r, fmap_g):
   loss = 0
   for dr, dg in zip(fmap_r, fmap_g):
@@ -10,7 +9,6 @@ def feature_loss(fmap_r, fmap_g):
       loss += torch.mean(torch.abs(rl - gl))
 
   return loss * 2 
-
 
 def discriminator_loss(disc_real_outputs, disc_generated_outputs):
   loss = 0
@@ -27,7 +25,6 @@ def discriminator_loss(disc_real_outputs, disc_generated_outputs):
 
   return loss, r_losses, g_losses
 
-
 def generator_loss(disc_outputs):
   loss = 0
   gen_losses = []
@@ -38,7 +35,6 @@ def generator_loss(disc_outputs):
     loss += l
 
   return loss, gen_losses
-
 
 def kl_loss(logs, m):
   kl = 0.5 * (m**2 + torch.exp(logs) - logs - 1).sum(dim=1)
