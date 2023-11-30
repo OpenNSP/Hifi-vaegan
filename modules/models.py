@@ -57,7 +57,15 @@ class Encoder(nn.Module):
         m, logs = torch.split(x, self.out_channels, dim=1)
         z = m + torch.randn_like(m) * torch.exp(logs)
         return z, m, logs
-
+    
+    def remove_weight_norm(self):
+        for l in self.ups:
+            remove_weight_norm(l)
+        for l in self.resblocks:
+            l.remove_weight_norm()
+        remove_weight_norm(self.conv_pre)
+        remove_weight_norm(self.conv_post)
+        
 class DiscriminatorP(torch.nn.Module):
     def __init__(self, period, kernel_size=5, stride=3, use_spectral_norm=False):
         super(DiscriminatorP, self).__init__()
@@ -390,3 +398,7 @@ class TrainModel(nn.Module):
         wav = self.dec(z)
 
         return z, wav, (m, logs), commit_loss
+    
+    def remove_weight_norm(self):
+        self.dec.remove_weight_norm()
+        self.enc_q.remove_weight_norm()
