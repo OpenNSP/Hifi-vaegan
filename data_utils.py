@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.utils.data
 from utils import load_filepaths_and_text, load_wav_to_torch
+import librosa
 
 class TextAudioSpeakerLoader(torch.utils.data.Dataset):
     def __init__(self, audiopaths, hparams, all_in_mem: bool = False, vol_aug: bool = True, is_slice = True):
@@ -40,7 +41,11 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
             max_shift = min(1, np.log10(1/max_amp))
             log10_vol_shift = random.uniform(-1, max_shift)
             audio_norm = audio_norm * (10 ** log10_vol_shift)
-            
+
+        if random.choice([True, False]):
+            audio_norm = librosa.effects.pitch_shift(audio_norm.squeeze().numpy(), self.sampling_rate, n_steps=random.uniform(-12, 17))
+            audio_norm = torch.from_numpy(audio_norm).unsqueeze(0)
+        
         if self.is_slice:
             if (audio_norm.shape[-1] // self.hop_length) > self.segment_size:
                 start = random.randint(0, int(audio_norm.shape[-1] // self.hop_length) - self.segment_size)
