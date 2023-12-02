@@ -78,7 +78,7 @@ def train():
     scheduler_g = torch.optim.lr_scheduler.ExponentialLR(optim_g, gamma=hps.train.lr_decay, last_epoch=epoch_str - 2)
     scheduler_d = torch.optim.lr_scheduler.ExponentialLR(optim_d, gamma=hps.train.lr_decay, last_epoch=epoch_str - 2)
 
-    train_loader, _ , net_g, net_d, optim_g, optim_d, scheduler_g, scheduler_d = accelerator.prepare(train_loader, eval_loader, net_g, net_d, optim_g, optim_d, scheduler_g, scheduler_d)
+    train_loader, net_g, net_d, optim_g, optim_d, scheduler_g, scheduler_d = accelerator.prepare(train_loader, net_g, net_d, optim_g, optim_d, scheduler_g, scheduler_d)
 
     print("======= Start training =======")
     with progress:
