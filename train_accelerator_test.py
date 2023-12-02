@@ -145,8 +145,6 @@ def train():
                     grad_norm_g = commons.clip_grad_value_(net_g.parameters(), None)
                     optim_g.step()
                     
-                    scheduler_g.step()
-                    scheduler_d.step()
 
                 if accelerator.is_main_process:
                     if global_step % hps.train.log_interval == 0:
@@ -177,7 +175,9 @@ def train():
                     global_step += 1
                     
                 accelerator.wait_for_everyone()
-            progress.reset(train_task)
+            scheduler_g.step()
+            scheduler_d.step()
+            progress.reset(train_task)          
 
 def evaluate(hps, generator, eval_loader, writer):
     generator.eval()
