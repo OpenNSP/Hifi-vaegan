@@ -391,8 +391,7 @@ class TrainModel(nn.Module):
     def forward(self, wav):
         z, m, logs = self.enc_q(wav)
         if self.quantizer is not None and self.training:
-            z, indices, commit_loss = self.quantizer(z.transpose(1,2))
-            z = z.transpose(1,2)
+            z_, indices, commit_loss = self.quantizer(z.transpose(1,2))
         else:
             commit_loss = 0
         wav = self.dec(z)
