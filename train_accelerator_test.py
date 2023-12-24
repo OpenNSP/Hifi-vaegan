@@ -174,7 +174,6 @@ def train():
                 if accelerator.sync_gradients:
                     global_step += 1
                     
-                accelerator.wait_for_everyone()
             scheduler_g.step()
             scheduler_d.step()
             progress.reset(train_task)          
