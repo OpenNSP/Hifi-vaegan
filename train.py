@@ -15,7 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 import modules.commons as commons
 import utils
 from data_utils import TextAudioCollate, TextAudioSpeakerLoader
-from modules.losses import discriminator_loss, feature_loss, generator_loss, kl_loss
+from modules.losses import discriminator_loss, feature_loss, generator_loss, kl_loss, RSSLoss
 from modules.mel_processing import mel_spectrogram_torch
 from modules.models import MultiPeriodDiscriminator, TrainModel
 
@@ -65,10 +65,10 @@ def run(rank, n_gpus, hps):
     collate_fn = TextAudioCollate()
     all_in_mem = hps.train.all_in_mem
     train_dataset = TextAudioSpeakerLoader(hps.data.training_files, hps, all_in_mem=all_in_mem)
-    num_workers = 5 if multiprocessing.cpu_count() > 4 else multiprocessing.cpu_count()
+    num_workers = multiprocessing.cpu_count()
     if all_in_mem:
         num_workers = 0
-    train_loader = DataLoader(train_dataset, num_workers=num_workers, shuffle=False, pin_memory=True, batch_size=hps.train.batch_size, collate_fn=collate_fn)
+    train_loader = DataLoader(train_dataset, num_workers=num_workers, shuffle=False, pin_memory=True, batch_size=hps.train.batch_size, collate_fn=collate_fn, persistent_workers=True)
     if rank == 0:
         eval_dataset = TextAudioSpeakerLoader(hps.data.validation_files, hps, all_in_mem=all_in_mem,vol_aug = False,pitch_aug=False, is_slice=False)
         eval_loader = DataLoader(eval_dataset, num_workers=1, shuffle=False, batch_size=1, pin_memory=False, drop_last=False, collate_fn=collate_fn)
@@ -90,7 +90,7 @@ def run(rank, n_gpus, hps):
         eps=hps.train.eps)
     net_g = DDP(net_g, device_ids=[rank])  # , find_unused_parameters=True)
     net_d = DDP(net_d, device_ids=[rank])
-
+    rss_loss = RSSLoss(256, 2048, 8).cuda(rank)
     skip_optimizer = False
     try:
         _, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), net_g, optim_g, skip_optimizer)
@@ -123,13 +123,13 @@ def run(rank, n_gpus, hps):
                 for param_group in optim_d.param_groups:
                     param_group['lr'] = hps.train.learning_rate / warmup_epoch * epoch
             if rank == 0:
-                train_and_evaluate(rank, epoch, hps, [net_g, net_d], [optim_g, optim_d], [scheduler_g, scheduler_d], scaler, [train_loader, eval_loader], writer)
+                train_and_evaluate(rank, rss_loss, epoch, hps, [net_g, net_d], [optim_g, optim_d], [scheduler_g, scheduler_d], scaler, [train_loader, eval_loader], writer)
             else:
-                train_and_evaluate(rank, epoch, hps, [net_g, net_d], [optim_g, optim_d], [scheduler_g, scheduler_d], scaler, [train_loader, None], None)
+                train_and_evaluate(rank, rss_loss, epoch, hps, [net_g, net_d], [optim_g, optim_d], [scheduler_g, scheduler_d], scaler, [train_loader, None], None)
             scheduler_g.step()
             scheduler_d.step()
 
-def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loaders, writer):
+def train_and_evaluate(rank, rss_loss, epoch, hps, nets, optims, schedulers, scaler, loaders, writer):
     net_g, net_d = nets
     optim_g, optim_d = optims
     scheduler_g, scheduler_d = schedulers
@@ -192,7 +192,8 @@ def train_and_evaluate(rank, epoch, hps, nets, optims, schedulers, scaler, loade
             # Generator
             y_d_hat_r, y_d_hat_g, fmap_r, fmap_g = net_d(wav, y_hat)
             with autocast(enabled=False, dtype=half_type):
-                loss_mel = F.l1_loss(mel, y_hat_mel) * hps.train.c_mel
+                # loss_mel = F.l1_loss(mel, y_hat_mel) * hps.train.c_mel
+                loss_mel = rss_loss(wav, y_hat) * hps.train.c_mel
                 loss_wav = F.l1_loss(wav, y_hat) * hps.train.c_wav
                 loss_kl = kl_loss(logs, m) * hps.train.c_kl
                 loss_fm = feature_loss(fmap_r, fmap_g)
