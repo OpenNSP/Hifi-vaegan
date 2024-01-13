@@ -182,14 +182,14 @@ def train_and_evaluate(rank, rss_loss, epoch, hps, nets, optims, schedulers, sca
                 loss_disc, losses_disc_r, losses_disc_g = discriminator_loss(y_d_hat_r, y_d_hat_g)
                 loss_disc_all = loss_disc * hps.train.c_disc
         
-        if random.random() < 0.7 and global_step > 2000:
-            optim_d.zero_grad()
-            scaler.scale(loss_disc_all).backward()
-            scaler.unscale_(optim_d)
-            grad_norm_d = commons.clip_grad_value_(net_d.parameters(), None)
-            scaler.step(optim_d)
-        else:
-            grad_norm_d = 0
+        if random.random() > 0.7 or global_step < 2000:
+            loss_disc_all *= 0
+            
+        optim_d.zero_grad()
+        scaler.scale(loss_disc_all).backward()
+        scaler.unscale_(optim_d)
+        grad_norm_d = commons.clip_grad_value_(net_d.parameters(), None)
+        scaler.step(optim_d)
 
         with autocast(enabled=hps.train.fp16_run, dtype=half_type):
             # Generator
