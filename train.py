@@ -11,6 +11,7 @@ from torch.nn import functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+import random
 
 import modules.commons as commons
 import utils
@@ -179,14 +180,16 @@ def train_and_evaluate(rank, rss_loss, epoch, hps, nets, optims, schedulers, sca
 
             with autocast(enabled=False, dtype=half_type):
                 loss_disc, losses_disc_r, losses_disc_g = discriminator_loss(y_d_hat_r, y_d_hat_g)
-                loss_disc_all = loss_disc
+                loss_disc_all = loss_disc * hps.train.c_disc
         
-        optim_d.zero_grad()
-        scaler.scale(loss_disc_all).backward()
-        scaler.unscale_(optim_d)
-        grad_norm_d = commons.clip_grad_value_(net_d.parameters(), None)
-        scaler.step(optim_d)
-        
+        if random.random() < 0.7 and global_step > 2000:
+            optim_d.zero_grad()
+            scaler.scale(loss_disc_all).backward()
+            scaler.unscale_(optim_d)
+            grad_norm_d = commons.clip_grad_value_(net_d.parameters(), None)
+            scaler.step(optim_d)
+        else:
+            grad_norm_d = 0
 
         with autocast(enabled=hps.train.fp16_run, dtype=half_type):
             # Generator
@@ -194,10 +197,13 @@ def train_and_evaluate(rank, rss_loss, epoch, hps, nets, optims, schedulers, sca
             with autocast(enabled=False, dtype=half_type):
                 # loss_mel = F.l1_loss(mel, y_hat_mel) * hps.train.c_mel
                 loss_mel = rss_loss(wav, y_hat) * hps.train.c_mel
-                loss_wav = F.l1_loss(wav, y_hat) * hps.train.c_wav
+                loss_wav = F.smooth_l1_loss(wav, y_hat) * hps.train.c_wav
                 loss_kl = kl_loss(logs, m) * hps.train.c_kl
                 loss_fm = feature_loss(fmap_r, fmap_g)
                 loss_gen, losses_gen = generator_loss(y_d_hat_g)
+                if global_step < 2000:
+                    loss_gen *= 0
+                    loss_fm *= 0
                 commit_loss = commit_loss * hps.train.c_vq
                 loss_gen_all = loss_gen + loss_fm + loss_mel + loss_kl + loss_wav + commit_loss
         optim_g.zero_grad()

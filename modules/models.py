@@ -8,6 +8,7 @@ from vector_quantize_pytorch import VectorQuantize
 
 import modules.modules as modules
 from modules.commons import get_padding, init_weights
+from modules.msstftd import MultiScaleSTFTDiscriminator
 
 LRELU_SLOPE = 0.1
 
@@ -131,10 +132,10 @@ class DiscriminatorS(torch.nn.Module):
 class MultiPeriodDiscriminator(torch.nn.Module):
     def __init__(self, use_spectral_norm=False):
         super(MultiPeriodDiscriminator, self).__init__()
-        # periods = [2, 3, 5, 7, 11]
+        periods = [2, 3, 5, 7, 11, 13 ,17]
 
-        discs = [DiscriminatorS(use_spectral_norm=use_spectral_norm)] * 5
-        # discs = discs + [DiscriminatorP(i, use_spectral_norm=use_spectral_norm) for i in periods]
+        discs = [MultiScaleSTFTDiscriminator(filters=32)]
+        discs = discs + [DiscriminatorP(i, use_spectral_norm=use_spectral_norm) for i in periods]
         self.discriminators = nn.ModuleList(discs)
 
     def forward(self, y, y_hat):
@@ -145,10 +146,16 @@ class MultiPeriodDiscriminator(torch.nn.Module):
         for i, d in enumerate(self.discriminators):
             y_d_r, fmap_r = d(y)
             y_d_g, fmap_g = d(y_hat)
-            y_d_rs.append(y_d_r)
-            y_d_gs.append(y_d_g)
-            fmap_rs.append(fmap_r)
-            fmap_gs.append(fmap_g)
+            if isinstance(d, MultiScaleSTFTDiscriminator):
+                y_d_rs.extend(y_d_r)
+                y_d_gs.extend(y_d_g)
+                fmap_rs.extend(fmap_r)
+                fmap_gs.extend(fmap_g)
+            else:
+                y_d_rs.append(y_d_r)
+                y_d_gs.append(y_d_g)
+                fmap_rs.append(fmap_r)
+                fmap_gs.append(fmap_g)
 
         return y_d_rs, y_d_gs, fmap_rs, fmap_gs
 
@@ -377,8 +384,8 @@ class TrainModel(nn.Module):
         
         self.dec = Generator(h=hps)
 
-        self.enc_q = Encoder(h=hps)
-        self.enc_q.requires_grad_(False)
+        self.enc_q = Encoder(h=hps) 
+        
         if use_vq:
             self.quantizer = VectorQuantize(
                 dim = inter_channels,

@@ -21,6 +21,7 @@
     "c_wav": 5,
     "c_kl": 0.01,
     "c_vq": 0.1,
+    "c_disc": 1.0,
     "port": "8001",
     "keep_ckpts": 10,
     "all_in_mem": false,
