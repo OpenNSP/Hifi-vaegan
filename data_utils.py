@@ -6,7 +6,7 @@ from utils import load_filepaths_and_text, load_wav_to_torch
 import librosa
 
 class TextAudioSpeakerLoader(torch.utils.data.Dataset):
-    def __init__(self, audiopaths, hparams, all_in_mem: bool = False, vol_aug: bool = True, pitch_aug: bool = True, is_slice = True):
+    def __init__(self, audiopaths, hparams, all_in_mem: bool = False, vol_aug: bool = True, pitch_aug: bool = True, is_slice = True, rank = 0, world_size = 1):
         self.audiopaths = load_filepaths_and_text(audiopaths)
         self.hparams = hparams
         self.max_wav_value = hparams.data.max_wav_value
@@ -22,6 +22,9 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         random.seed(1234)
         random.shuffle(self.audiopaths)
         
+        if world_size > 1:
+            self.audiopaths = self.audiopaths[rank::world_size]
+            
         self.all_in_mem = all_in_mem
         if self.all_in_mem:
             self.cache = [self.get_audio(p[0]) for p in self.audiopaths]

@@ -65,7 +65,7 @@ def run(rank, n_gpus, hps):
     torch.cuda.set_device(rank)
     collate_fn = TextAudioCollate()
     all_in_mem = hps.train.all_in_mem
-    train_dataset = TextAudioSpeakerLoader(hps.data.training_files, hps, all_in_mem=all_in_mem)
+    train_dataset = TextAudioSpeakerLoader(hps.data.training_files, hps, all_in_mem=all_in_mem, world_size=n_gpus, rank=rank)
     num_workers = multiprocessing.cpu_count()
     if all_in_mem:
         num_workers = 0
