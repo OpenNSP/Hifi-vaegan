@@ -28,7 +28,7 @@ class Encoder(nn.Module):
         for i, (u, k) in enumerate(zip(reversed(h["upsample_rates"]), reversed(h["upsample_kernel_sizes"]))):
             self.ups.append(weight_norm(
                 Conv1d(h["upsample_initial_channel"] // (2 ** (len(h["upsample_rates"]) - i)), h["upsample_initial_channel"] // (2 ** (len(h["upsample_rates"]) - i - 1)),
-                                k, u, padding= (k - u + 1 ) // 2)))
+                                k, u, padding= (k - u + 1) // 2)))
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups), 0, -1):
             ch = h["upsample_initial_channel"] // (2 ** (i - 1))
@@ -132,9 +132,9 @@ class DiscriminatorS(torch.nn.Module):
 class MultiPeriodDiscriminator(torch.nn.Module):
     def __init__(self, use_spectral_norm=False):
         super(MultiPeriodDiscriminator, self).__init__()
-        periods = [2, 3, 5, 7, 11, 13 ,17]
+        periods = [2, 3, 5, 7, 11, 13, 19, 23, 29]
 
-        discs = [MultiScaleSTFTDiscriminator(filters=32)]
+        discs = [MultiScaleSTFTDiscriminator(filters=32) ,DiscriminatorS(use_spectral_norm=use_spectral_norm)]
         discs = discs + [DiscriminatorP(i, use_spectral_norm=use_spectral_norm) for i in periods]
         self.discriminators = nn.ModuleList(discs)
 
@@ -234,7 +234,7 @@ class Generator(torch.nn.Module):
         for i, (u, k) in enumerate(zip(h["upsample_rates"], h["upsample_kernel_sizes"])):
             self.ups.append(weight_norm(
                 ConvTranspose1d(h["upsample_initial_channel"] // (2 ** i), h["upsample_initial_channel"] // (2 ** (i + 1)),
-                                k, u, padding=(k - u +1 ) // 2)))
+                                k, u, padding=(k - u + 1) // 2)))
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups)):
             ch = h["upsample_initial_channel"] // (2 ** (i + 1))
@@ -384,7 +384,7 @@ class TrainModel(nn.Module):
         
         self.dec = Generator(h=hps)
 
-        self.enc_q = Encoder(h=hps) 
+        self.enc_q = Encoder(h=hps)
         
         if use_vq:
             self.quantizer = VectorQuantize(

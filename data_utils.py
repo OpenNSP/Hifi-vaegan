@@ -40,9 +40,8 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         return audio_norm
 
     def random_slice(self, audio_norm):
-
         if random.choice([True, False, False]) and self.pitch_aug:
-            audio_norm = librosa.effects.pitch_shift(y = audio_norm.squeeze().numpy(), sr = self.sampling_rate, n_steps=random.uniform(-5, 12))
+            audio_norm = librosa.resample(y = audio_norm.numpy(),  orig_sr=self.sampling_rate, target_sr=int(self.sampling_rate * random.uniform(1, 1/(2**(15/12)))))
             audio_norm = torch.from_numpy(audio_norm)
             if audio_norm.abs().max() >= 1.0:
                 audio_norm /= audio_norm.abs().max()
