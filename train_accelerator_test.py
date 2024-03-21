@@ -5,7 +5,6 @@ import time
 import modules.commons as commons
 import utils
 import torch
-from torch.cuda.amp import GradScaler, autocast
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from data_utils import TextAudioCollate, TextAudioSpeakerLoader
@@ -79,9 +78,7 @@ def train():
     scheduler_g = torch.optim.lr_scheduler.ExponentialLR(optim_g, gamma=hps.train.lr_decay, last_epoch=epoch_str - 2)
     scheduler_d = torch.optim.lr_scheduler.ExponentialLR(optim_d, gamma=hps.train.lr_decay, last_epoch=epoch_str - 2)
 
-    scaler = GradScaler(enabled=hps.train.fp16_run)
-
-    train_loader, eval_loader, net_g, net_d, optim_g, optim_d, scheduler_g, scheduler_d = accelerator.prepare(train_loader, eval_loader, net_g, net_d, optim_g, optim_d, scheduler_g, scheduler_d)
+    train_loader, net_g, net_d, optim_g, optim_d, scheduler_g, scheduler_d = accelerator.prepare(train_loader, net_g, net_d, optim_g, optim_d, scheduler_g, scheduler_d)
 
     print("======= Start training =======")
     with progress:
@@ -93,25 +90,23 @@ def train():
                 for param_group in optim_d.param_groups:
                     param_group['lr'] = hps.train.learning_rate / warmup_epoch * epoch
             
-            half_type = torch.bfloat16 if hps.train.half_type=="bf16" else torch.float16
-
             net_g.train()
             net_d.train()
             for _, items in enumerate(train_loader):
                 start_time = time.time()
-                wav, lengths = items
+                with accelerator.accumulate(net_g,net_d):
+                    wav, lengths = items
 
-                mel = mel_spectrogram_torch(
-                    wav,
-                    hps.data.filter_length,
-                    hps.data.n_mel_channels,
-                    hps.data.sampling_rate,
-                    hps.data.hop_length,
-                    hps.data.win_length,
-                    hps.data.mel_fmin,
-                    hps.data.mel_fmax)
-                
-                with autocast(enabled=hps.train.fp16_run, dtype=half_type):
+                    mel = mel_spectrogram_torch(
+                        wav,
+                        hps.data.filter_length,
+                        hps.data.n_mel_channels,
+                        hps.data.sampling_rate,
+                        hps.data.hop_length,
+                        hps.data.win_length,
+                        hps.data.mel_fmin,
+                        hps.data.mel_fmax)
+                    
                     z, y_hat, (m, logs), commit_loss = net_g(wav)
 
                     y_hat_mel = mel_spectrogram_torch(
@@ -124,36 +119,32 @@ def train():
                         hps.data.mel_fmin,
                         hps.data.mel_fmax
                     )
-                    
+                        
                     wav = wav[:, None, :]
                     y_d_hat_r, y_d_hat_g, _, _ = net_d(wav, y_hat.detach())
 
-                    with autocast(enabled=False, dtype=half_type):
-                        loss_disc, losses_disc_r, losses_disc_g = discriminator_loss(y_d_hat_r, y_d_hat_g)
-                        loss_disc_all = loss_disc
-                
-                optim_d.zero_grad()
-                accelerator.backward(scaler.scale(loss_disc_all))
-                scaler.unscale_(optim_d)
-                grad_norm_d = commons.clip_grad_value_(net_d.parameters(), None)
-                scaler.step(optim_d)
-
-                with autocast(enabled=hps.train.fp16_run, dtype=half_type):
+                    loss_disc, losses_disc_r, losses_disc_g = discriminator_loss(y_d_hat_r, y_d_hat_g)
+                    loss_disc_all = loss_disc
+                    
+                    optim_d.zero_grad()
+                    accelerator.backward(loss_disc_all)
+                    grad_norm_d = commons.clip_grad_value_(net_d.parameters(), None)
+                    optim_d.step()
+                    
                     y_d_hat_r, y_d_hat_g, fmap_r, fmap_g = net_d(wav, y_hat)
-                    with autocast(enabled=False, dtype=half_type):
-                        loss_mel = F.l1_loss(mel, y_hat_mel) * hps.train.c_mel
-                        loss_wav = F.l1_loss(wav, y_hat) * hps.train.c_wav
-                        loss_kl = kl_loss(logs, m) * hps.train.c_kl
-                        loss_fm = feature_loss(fmap_r, fmap_g)
-                        loss_gen, losses_gen = generator_loss(y_d_hat_g)
-                        commit_loss = commit_loss * hps.train.c_vq
-                        loss_gen_all = loss_gen + loss_fm + loss_mel + loss_kl + loss_wav + commit_loss
-                optim_g.zero_grad()
-                accelerator.backward(scaler.scale(loss_gen_all))
-                scaler.unscale_(optim_g)
-                grad_norm_g = commons.clip_grad_value_(net_g.parameters(), None)
-                scaler.step(optim_g)
-                scaler.update()
+                    loss_mel = F.l1_loss(mel, y_hat_mel) * hps.train.c_mel
+                    loss_wav = F.l1_loss(wav, y_hat) * hps.train.c_wav
+                    loss_kl = kl_loss(logs, m) * hps.train.c_kl
+                    loss_fm = feature_loss(fmap_r, fmap_g)
+                    loss_gen, losses_gen = generator_loss(y_d_hat_g)
+                    commit_loss = commit_loss * hps.train.c_vq
+                    loss_gen_all = loss_gen + loss_fm + loss_mel + loss_kl + loss_wav + commit_loss
+                    
+                    optim_g.zero_grad()
+                    accelerator.backward(loss_gen_all)
+                    grad_norm_g = commons.clip_grad_value_(net_g.parameters(), None)
+                    optim_g.step()
+                    
 
                 if accelerator.is_main_process:
                     if global_step % hps.train.log_interval == 0:
@@ -171,19 +162,21 @@ def train():
 
                     if global_step % hps.train.eval_interval == 0:
                         evaluate(hps, net_g, eval_loader, writer)
-                        utils.save_checkpoint(net_g, optim_g, hps.train.learning_rate, epoch, os.path.join(hps.model_dir, "G_{}.pth".format(global_step)))
-                        utils.save_checkpoint(net_d, optim_d, hps.train.learning_rate, epoch, os.path.join(hps.model_dir, "D_{}.pth".format(global_step)))
+                        utils.save_checkpoint(accelerator.unwrap_model(net_g) , optim_g, hps.train.learning_rate, epoch, os.path.join(hps.model_dir, "G_{}.pth".format(global_step)))
+                        utils.save_checkpoint(accelerator.unwrap_model(net_d), optim_d, hps.train.learning_rate, epoch, os.path.join(hps.model_dir, "D_{}.pth".format(global_step)))
                         keep_ckpts = getattr(hps.train, 'keep_ckpts', 0)
                         if keep_ckpts > 0:
                             utils.clean_checkpoints(path_to_models=hps.model_dir, n_ckpts_to_keep=keep_ckpts, sort_by_time=True)
                             print(f"Save checkpoint: G_{global_step}.pth D_{global_step}.pth | epoch={epoch}, step={global_step}, lr={optim_g.param_groups[0]['lr']:.5f}, loss_g={loss_gen.item():.2f}, loss_fm={loss_fm.item():.2f}, loss_mel={loss_mel.item():.2f}, loss_kl={loss_kl.item():.4f}, loss_wav={loss_wav.item():.2f}, vq_loss={commit_loss.item():.2f}")
-                    end_time = time.time()
-                    progress.update(train_task, advance=1, description=f"speed={1 / (end_time - start_time):.2f}it/s, epoch={epoch}, step={global_step}, lr={optim_g.param_groups[0]['lr']:.5f}, loss_g={loss_gen.item():.2f}, loss_fm={loss_fm.item():.2f}, loss_mel={loss_mel.item():.2f}, loss_kl={loss_kl.item():.2f}, loss_wav={loss_wav.item():.2f}, vq_loss={commit_loss.item():.4f}, grad_norm={grad_norm_g:.2f}")
-                global_step += 1
-                accelerator.wait_for_everyone()
-            progress.reset(train_task)
+                end_time = time.time()
+                progress.update(train_task, advance=1, description=f"speed={1 / (end_time - start_time):.2f}it/s, epoch={epoch}, step={global_step}, lr={optim_g.param_groups[0]['lr']:.5f}, loss_g={loss_gen.item():.2f}, loss_fm={loss_fm.item():.2f}, loss_mel={loss_mel.item():.2f}, loss_kl={loss_kl.item():.2f}, loss_wav={loss_wav.item():.2f}, vq_loss={commit_loss.item():.4f}, grad_norm={grad_norm_g:.2f}")
+                
+                if accelerator.sync_gradients:
+                    global_step += 1
+                    
             scheduler_g.step()
             scheduler_d.step()
+            progress.reset(train_task)          
 
 def evaluate(hps, generator, eval_loader, writer):
     generator.eval()

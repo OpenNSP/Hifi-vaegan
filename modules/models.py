@@ -8,6 +8,7 @@ from vector_quantize_pytorch import VectorQuantize
 
 import modules.modules as modules
 from modules.commons import get_padding, init_weights
+from modules.msstftd import MultiScaleSTFTDiscriminator
 
 LRELU_SLOPE = 0.1
 
@@ -27,10 +28,10 @@ class Encoder(nn.Module):
         for i, (u, k) in enumerate(zip(reversed(h["upsample_rates"]), reversed(h["upsample_kernel_sizes"]))):
             self.ups.append(weight_norm(
                 Conv1d(h["upsample_initial_channel"] // (2 ** (len(h["upsample_rates"]) - i)), h["upsample_initial_channel"] // (2 ** (len(h["upsample_rates"]) - i - 1)),
-                                k, u, padding=(k - u +1 ) // 2)))
+                                k, u, padding= (k - u + 1) // 2)))
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups), 0, -1):
-            ch = h["upsample_initial_channel"] // (2 ** (i-1))
+            ch = h["upsample_initial_channel"] // (2 ** (i - 1))
             for j, (k, d) in enumerate(zip(h["resblock_kernel_sizes"], h["resblock_dilation_sizes"])):
                 self.resblocks.append(resblock(h, ch, k, d))
 
@@ -57,7 +58,15 @@ class Encoder(nn.Module):
         m, logs = torch.split(x, self.out_channels, dim=1)
         z = m + torch.randn_like(m) * torch.exp(logs)
         return z, m, logs
-
+    
+    def remove_weight_norm(self):
+        for l in self.ups:
+            remove_weight_norm(l)
+        for l in self.resblocks:
+            l.remove_weight_norm()
+        remove_weight_norm(self.conv_pre)
+        remove_weight_norm(self.conv_post)
+        
 class DiscriminatorP(torch.nn.Module):
     def __init__(self, period, kernel_size=5, stride=3, use_spectral_norm=False):
         super(DiscriminatorP, self).__init__()
@@ -123,9 +132,9 @@ class DiscriminatorS(torch.nn.Module):
 class MultiPeriodDiscriminator(torch.nn.Module):
     def __init__(self, use_spectral_norm=False):
         super(MultiPeriodDiscriminator, self).__init__()
-        periods = [2, 3, 5, 7, 11]
+        periods = [2, 3, 5, 7, 11, 13, 19, 23, 29]
 
-        discs = [DiscriminatorS(use_spectral_norm=use_spectral_norm)]
+        discs = [MultiScaleSTFTDiscriminator(filters=32) ,DiscriminatorS(use_spectral_norm=use_spectral_norm)]
         discs = discs + [DiscriminatorP(i, use_spectral_norm=use_spectral_norm) for i in periods]
         self.discriminators = nn.ModuleList(discs)
 
@@ -137,10 +146,16 @@ class MultiPeriodDiscriminator(torch.nn.Module):
         for i, d in enumerate(self.discriminators):
             y_d_r, fmap_r = d(y)
             y_d_g, fmap_g = d(y_hat)
-            y_d_rs.append(y_d_r)
-            y_d_gs.append(y_d_g)
-            fmap_rs.append(fmap_r)
-            fmap_gs.append(fmap_g)
+            if isinstance(d, MultiScaleSTFTDiscriminator):
+                y_d_rs.extend(y_d_r)
+                y_d_gs.extend(y_d_g)
+                fmap_rs.extend(fmap_r)
+                fmap_gs.extend(fmap_g)
+            else:
+                y_d_rs.append(y_d_r)
+                y_d_gs.append(y_d_g)
+                fmap_rs.append(fmap_r)
+                fmap_gs.append(fmap_g)
 
         return y_d_rs, y_d_gs, fmap_rs, fmap_gs
 
@@ -219,7 +234,7 @@ class Generator(torch.nn.Module):
         for i, (u, k) in enumerate(zip(h["upsample_rates"], h["upsample_kernel_sizes"])):
             self.ups.append(weight_norm(
                 ConvTranspose1d(h["upsample_initial_channel"] // (2 ** i), h["upsample_initial_channel"] // (2 ** (i + 1)),
-                                k, u, padding=(k - u +1 ) // 2)))
+                                k, u, padding=(k - u + 1) // 2)))
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups)):
             ch = h["upsample_initial_channel"] // (2 ** (i + 1))
@@ -370,7 +385,7 @@ class TrainModel(nn.Module):
         self.dec = Generator(h=hps)
 
         self.enc_q = Encoder(h=hps)
-
+        
         if use_vq:
             self.quantizer = VectorQuantize(
                 dim = inter_channels,
@@ -383,10 +398,13 @@ class TrainModel(nn.Module):
     def forward(self, wav):
         z, m, logs = self.enc_q(wav)
         if self.quantizer is not None and self.training:
-            z, indices, commit_loss = self.quantizer(z.transpose(1,2))
-            z = z.transpose(1,2)
+            z_, indices, commit_loss = self.quantizer(z.transpose(1,2))
         else:
             commit_loss = 0
         wav = self.dec(z)
 
         return z, wav, (m, logs), commit_loss
+    
+    def remove_weight_norm(self):
+        self.dec.remove_weight_norm()
+        self.enc_q.remove_weight_norm()

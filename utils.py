@@ -14,12 +14,6 @@ MATPLOTLIB_FLAG = False
 logging.basicConfig(stream=sys.stdout, level=logging.WARN)
 logger = logging
 
-f0_bin = 256
-f0_max = 1100.0
-f0_min = 50.0
-f0_mel_min = 1127 * np.log(1 + f0_min / 700)
-f0_mel_max = 1127 * np.log(1 + f0_max / 700)
-
 def load_checkpoint(checkpoint_path, model, optimizer=None, skip_optimizer=False):
     assert os.path.isfile(checkpoint_path)
     checkpoint_dict = torch.load(checkpoint_path, map_location='cpu')

@@ -21,10 +21,12 @@
     "c_wav": 5,
     "c_kl": 0.01,
     "c_vq": 0.1,
+    "c_disc": 1.0,
     "port": "8001",
     "keep_ckpts": 10,
     "all_in_mem": false,
-    "vol_aug": false
+    "vol_aug": false,
+    "pitch_aug": true
   },
   "data": {
     "training_files": "filelists/train.txt",
@@ -34,7 +36,7 @@
     "filter_length": 2048,
     "hop_length": 512,
     "win_length": 2048,
-    "n_mel_channels": 80,
+    "n_mel_channels": 128,
     "mel_fmin": 0,
     "mel_fmax": 22050
   },
@@ -47,43 +49,11 @@
     "kernel_size": 3,
     "p_dropout": 0.1,
     "resblock": "1",
-    "resblock_kernel_sizes": [
-      3,
-      7,
-      11
-    ],
-    "resblock_dilation_sizes": [
-      [
-        1,
-        3,
-        5
-      ],
-      [
-        1,
-        3,
-        5
-      ],
-      [
-        1,
-        3,
-        5
-      ]
-    ],
-    "upsample_rates": [
-      8,
-      8,
-      2,
-      2,
-      2
-    ],
+    "resblock_kernel_sizes": [3,7,11],
+    "resblock_dilation_sizes": [[1,3,5],[1,3,5],[1,3,5]],
+    "upsample_rates": [8,8,2,2,2],
     "upsample_initial_channel": 512,
-    "upsample_kernel_sizes": [
-      16,
-      16,
-      4,
-      4,
-      4
-    ],
+    "upsample_kernel_sizes": [16,16,4,4,4],
     "use_spectral_norm": false,
     "vol_embedding": false,
     "use_vq": true,

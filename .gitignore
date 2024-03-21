@@ -9,3 +9,6 @@ raw/**
 results/**
 
 inference/chunks_temp.json
+configs/config.json
+filelists/train.txt
+filelists/val.txt
