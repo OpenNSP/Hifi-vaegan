@@ -233,7 +233,7 @@ class Generator(torch.nn.Module):
         for i, (u, k) in enumerate(zip(h["upsample_rates"], h["upsample_kernel_sizes"])):
             self.ups.append(weight_norm(
                 Conv1d(h["upsample_initial_channel"] // (2 ** i), h["upsample_initial_channel"] // (2 ** (i + 1)),
-                                int(k//2), 1, padding=get_padding(k, 1))))
+                                int(k//2), 1, padding=get_padding(int(k//2), 1))))
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups)):
             ch = h["upsample_initial_channel"] // (2 ** (i + 1))
