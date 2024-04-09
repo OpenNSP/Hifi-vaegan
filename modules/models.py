@@ -23,7 +23,7 @@ class Encoder(nn.Module):
         self.out_channels = h["inter_channels"]
         self.num_downsamples = len(h["upsample_rates"])
         self.conv_pre = weight_norm(Conv1d(1, h["upsample_initial_channel"]// (2 ** len(h["upsample_rates"])), 7, 1, padding=3))
-        resblock = ResBlock1 if h["resblock"] == '1' else ResBlock2
+        resblock = ResBlock2
         self.ups = nn.ModuleList()
         for i, (u, k) in enumerate(zip(reversed(h["upsample_rates"]), reversed(h["upsample_kernel_sizes"]))):
             self.ups.append(weight_norm(
@@ -31,7 +31,7 @@ class Encoder(nn.Module):
                                 k, u, padding= (k - u + 1) // 2)))
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups), 0, -1):
-            ch = h["upsample_initial_channel"] // (2 ** (i))
+            ch = h["upsample_initial_channel"] // (2 ** (i + 1))
             for j, (k, d) in enumerate(zip(h["resblock_kernel_sizes"], h["resblock_dilation_sizes"])):
                 self.resblocks.append(resblock(h, ch, k, d))
 

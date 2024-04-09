@@ -12,3 +12,6 @@ inference/chunks_temp.json
 configs/config.json
 filelists/train.txt
 filelists/val.txt
+configs/config.json
+filelists/train.txt
+filelists/val.txt
