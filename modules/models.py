@@ -31,7 +31,7 @@ class Encoder(nn.Module):
                                 k, u, padding= (k - u + 1) // 2)))
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups), 0, -1):
-            ch = h["upsample_initial_channel"] // (2 ** (i + 1))
+            ch = h["upsample_initial_channel"] // (2 ** (i - 1))
             for j, (k, d) in enumerate(zip(h["resblock_kernel_sizes"], h["resblock_dilation_sizes"])):
                 self.resblocks.append(resblock(h, ch, k, d))
 
