@@ -227,14 +227,13 @@ class Generator(torch.nn.Module):
         super(Generator, self).__init__()
         self.h = h
         self.num_kernels = len(h["resblock_kernel_sizes"])
-        self.num_upsamples = len(h["upsample_rates"])
         self.conv_pre = weight_norm(Conv1d(h["inter_channels"], h["upsample_initial_channel"], 7, 1, padding=3))
         resblock = ResBlock1 if h["resblock"] == '1' else ResBlock2
         self.ups = nn.ModuleList()
         for i, (u, k) in enumerate(zip(h["upsample_rates"], h["upsample_kernel_sizes"])):
             self.ups.append(weight_norm(
-                ConvTranspose1d(h["upsample_initial_channel"] // (2 ** i), h["upsample_initial_channel"] // (2 ** (i + 1)),
-                                k, u, padding=(k - u + 1) // 2)))
+                Conv1d(h["upsample_initial_channel"] // (2 ** i), h["upsample_initial_channel"] // (2 ** (i + 1)),
+                                int(k//2), 1, padding=get_padding(k, 1))))
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups)):
             ch = h["upsample_initial_channel"] // (2 ** (i + 1))
@@ -248,8 +247,9 @@ class Generator(torch.nn.Module):
 
     def forward(self, x):
         x = self.conv_pre(x)
-        for i in range(self.num_upsamples):
+        for i, u in enumerate(self.h["upsample_rates"]):
             x = F.leaky_relu(x, LRELU_SLOPE)
+            x = F.interpolate(x, scale_factor=u, mode='nearest')
             x = self.ups[i](x)
             xs = None
             for j in range(self.num_kernels):
